@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta charset="utf-8">
+		<title>IMU Pong</title>
+		<style>
+			body { margin: 0; }
+		</style>
+	</head>
+	<body>
+		<script>
+            const webSocket = new WebSocket("ws://localhost:3001");
+            let data = undefined;
+            webSocket.onopen = (event) => {
+                console.log(event);
+            }
+
+            webSocket.onmessage = (message) => {
+                data = JSON.parse(message.data);
+            }
+
+            // if (data !== undefined) {
+            //     const height = data.height;
+            // }
+		</script>
+	</body>
+</html>

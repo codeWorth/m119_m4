@@ -20,11 +20,19 @@
 		<script>
             const webSocket = new WebSocket("ws://localhost:3001");
             let data = undefined;
+            let lastData = undefined;
             webSocket.onopen = (event) => {
                 console.log(event);
             }
 
             webSocket.onmessage = (message) => {
+                if (lastData != undefined) {
+                    const dt = Date.now() - lastData;
+                    if (dt > 100) {
+                        console.log(dt, "since data!");
+                    }
+                }
+                lastData = Date.now();
                 data = JSON.parse(message.data);
             }
 
@@ -39,6 +47,7 @@
             const padding = 10;
             let p1Height = 0;
             let p2Height = 0;
+            const maxSpeed = 20;
 
             const ballRadius = 10;
             let ballX = canvas.width/2;
@@ -48,8 +57,13 @@
 
             let lastTime = undefined;
 
-            let topIMU_z = undefined;
-            let scaleIMU_z = undefined;
+            const p1 = {x: 0, y: 0, z: 0};
+            const p2 = {x: 0, y: 0, z: canvas.height};
+            let e1 = undefined;
+            let e2 = undefined;
+            let origin = undefined;
+            const F = 0.3;
+            const A_F = 0.1;
 
             function drawHeight(height) {
                 const maxHeight = canvas.height - padding*2 - paddleHeight;
@@ -82,6 +96,27 @@
                 ballY += ballVy * dt;
             }
 
+            function modAngle() {
+                const speed = Math.sqrt(ballVx*ballVx + ballVy*ballVy);
+                const amt = (2 * Math.random() - 1) * Math.abs(ballVy) * A_F;
+
+                if (ballVx < 0) {
+                    ballVx += amt;
+                    if (ballVx >= 0) {
+                        ballVx -= amt*2;
+                    }
+                } else {
+                    ballVx += amt;
+                    if (ballVx <= 0) {
+                        ballVx -= amt*2;
+                    }
+                }
+
+                const newSpeed = Math.sqrt(ballVx*ballVx + ballVy*ballVy);
+                ballVx *= speed / newSpeed;
+                ballVy *= speed / newSpeed;
+            }
+
             function bounceBall() {
                 if (ballY < ballRadius || ballY > canvas.height - ballRadius) {
                     ballVy *= -1;
@@ -92,9 +127,11 @@
                 if (ballX < minX) {
                     ballVx *= -1;
                     ballX = minX;
+                    modAngle();
                 } else if (ballX > maxX) {
                     ballVx *= -1;
                     ballX = maxX;
+                    modAngle();
                 }
             }
 
@@ -120,6 +157,15 @@
                 }
             }
 
+            function towards(curY, wantedY) {
+                if (curY < wantedY) {
+                    wantedY -= Math.min(maxSpeed, wantedY - curY);
+                } else {
+                    wantedY += Math.min(maxSpeed, curY - wantedY);
+                }
+                return wantedY;
+            }
+
             function draw() {
                 let dt = 0;
                 if (lastTime !== undefined) {
@@ -127,10 +173,13 @@
                 }
                 lastTime = Date.now();
 
-                if (topIMU_z !== undefined && scaleIMU_z !== undefined && data !== undefined) {
-                    const height = data.height;
-                    p2Height = (height - topIMU_z) * scaleIMU_z;
+                if (origin !== undefined && data !== undefined) {
+                    const intersection = findIntersection(data);
+                    const wanted = p2Height * (1 - F) + intersection.z * F;
+                    p2Height = towards(p2Height, wanted);
                 }
+
+                p1Height = towards(p1Height, ballY - paddleHeight/2);
 
                 moveBall(dt);
                 checkLoss();
@@ -154,22 +203,85 @@
                 ctx.fill();
             }
 
+            function cross(a, b) {
+                return {
+                    x: a.y * b.z - a.z * b.y,
+                    y: a.z * b.x - a.x * b.z,
+                    z: a.x * b.y - a.y * b.x
+                };
+            }
+
+            function dot(a, b) {
+                return a.x*b.x + a.y*b.y + a.z*b.z;
+            }
+
+            function plus(a, b) {
+                return {
+                    x: a.x + b.x,
+                    y: a.y + b.y,
+                    z: a.z + b.z
+                };
+            }
+
+            function minus(a, b) {
+                return {
+                    x: a.x - b.x,
+                    y: a.y - b.y,
+                    z: a.z - b.z
+                };
+            }
+
+            function times(a, s) {
+                return {
+                    x: a.x * s,
+                    y: a.y * s,
+                    z: a.z * s
+                };
+            }
+
+            // https://math.stackexchange.com/questions/2213165/find-shortest-distance-between-lines-in-3d
+            function findOrigin() {
+                const n = cross(e1, e2);
+                const n2 = dot(n, n);
+
+                const r = minus(p2, p1);
+
+                const t1 = dot(cross(e2, n), r) / n2;
+                const t2 = dot(cross(e1, n), r) / n2;
+
+                const o1 = plus(p1, times(e1, t1));
+                const o2 = plus(p2, times(e2, t2));
+
+                // average closest points
+                return times(plus(o1, o2), 0.5);
+            }
+
+            // find where origin + t*e1 = {0, ?, ?}
+            function findIntersection(e1) {
+                const t = -origin.x / e1.x;
+                return plus(origin, times(e1, t));
+            }
+
             calibrateButton.onclick = () => {
                 if (data === undefined) return;
-                const height = data.height;
 
-                if (topIMU_z === undefined) {
-                    topIMU_z = height;
+                if (e1 === undefined) {
+                    e1 = data;
                     calibrateButton.innerHTML = "Bottom position set";
-                    alert("Move your imu to the bottom position, and press the \"Bottom position set\" button");
-                } else if (scaleIMU_z === undefined) {
-                    scaleIMU_z = (canvas.height - padding - paddleHeight) / (height - topIMU_z);
+                    // alert("Move your imu to the bottom position, and press the \"Bottom position set\" button");
+                } else if (e2 === undefined) {
+                    e2 = data;
                     calibrateButton.hidden = true;
+                    origin = findOrigin();
+                    const speed = 250;
+                    const direction = Math.random() * Math.PI * 2;
+                    ballVx = speed * Math.cos(direction);
+                    ballVy = speed * Math.sin(direction);
                 }
             };
 
             const interval = setInterval(draw, 20);
-            alert("Move your imu to the top position, and press the \"Top position set\" button");
+            // alert("Move your imu to the top position, and press the \"Top position set\" button");
 		</script>
 	</body>
 </html>

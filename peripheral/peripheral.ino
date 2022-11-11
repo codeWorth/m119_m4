@@ -5,10 +5,14 @@
 using namespace BLA;
 
 #define BLE_UUID_PADDLE_SERVICE "1101"
-#define BLE_UUID_HEIGHT "2101"
+#define BLE_UUID_FORWARD_X "2101"
+#define BLE_UUID_FORWARD_Y "2102"
+#define BLE_UUID_FORWARD_Z "2103"
 
 BLEService paddleService(BLE_UUID_PADDLE_SERVICE);
-BLEFloatCharacteristic height(BLE_UUID_HEIGHT, BLERead | BLENotify);
+BLEFloatCharacteristic forwardX(BLE_UUID_FORWARD_X, BLERead);
+BLEFloatCharacteristic forwardY(BLE_UUID_FORWARD_Y, BLERead);
+BLEFloatCharacteristic forwardZ(BLE_UUID_FORWARD_Z, BLERead);
 
 unsigned long last_micros = 0;
 float movement;
@@ -29,8 +33,6 @@ Matrix<3, 3> IMU_BASIS = {1, 0, 0, 0, 1, 0, 0, 0, 1};
 Matrix<3, 3> ROT_MAT_X;
 Matrix<3, 3> ROT_MAT_Y;
 Matrix<3, 3> ROT_MAT_Z;
-float vz = 0;
-float z = 0;
 
 void putIdentity(Matrix<3, 3>& out) {
   out = {
@@ -144,13 +146,17 @@ void setup() {
   BLE.setAdvertisedService(paddleService);
 
   // add the characteristic to the service
-  paddleService.addCharacteristic(height);
+  paddleService.addCharacteristic(forwardX);
+  paddleService.addCharacteristic(forwardY);
+  paddleService.addCharacteristic(forwardZ);
 
   // add service
   BLE.addService(paddleService);
 
   // set the initial value for the characteristic:
-  height.writeValue(0);
+  forwardX.writeValue(1);
+  forwardY.writeValue(0);
+  forwardZ.writeValue(0);
 
   // start advertising
   BLE.advertise();
@@ -231,22 +237,12 @@ void loop() {
       putRotateATowardsB(ROT_MAT_X, world_accel, DOWN, max_amount);
       IMU_BASIS = ROT_MAT_X * IMU_BASIS;
 
-      world_accel = IMU_BASIS * A; // recalculate after calibration
-      // subtract off the existing 1 G downwards from gravity
-      world_accel(2) -= 1;
-      float az = world_accel(2);
-      if (abs(az) < 0.02) {
-        az = 0;
-      } else {
-        az *= 10000;
-      }
-      vz += world_accel(2) * dt;
-      vz *= movement_decel;
-      z += vz * dt;
-      Serial << vz << '\t' << z << '\n';
-
       if (central) {
-        height.writeValue(z);
+        Matrix<3> forward = IMU_BASIS.Submatrix<3, 1>(0, 0);
+        
+        forwardX.writeValue(forward(0));
+        forwardY.writeValue(-forward(1));
+        forwardZ.writeValue(-forward(2));
       }
     }
   }

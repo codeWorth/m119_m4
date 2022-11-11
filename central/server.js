@@ -1,6 +1,13 @@
 const uuid_service = "1101";
-const uuid_value_height = "2101";
-let height = undefined;
+const uuid_value_forward_x = "2101";
+const uuid_value_forward_y = "2102";
+const uuid_value_forward_z = "2103";
+
+let data = undefined;
+let forward_x = undefined;
+let forward_y = undefined;
+let forward_z = undefined;
+let lastData = undefined;
 
 const noble = require('@abandonware/noble');
 
@@ -23,35 +30,68 @@ noble.on('discover', async (peripheral) => {
   await peripheral.connectAsync();
   const {characteristics} = await peripheral.discoverSomeServicesAndCharacteristicsAsync(
     [uuid_service], 
-    [uuid_value_height]
+    [uuid_value_forward_x, uuid_value_forward_y, uuid_value_forward_z]
   );
 
-  const height_char = characteristics.find(c => c.uuid == uuid_value_height);
+  const forward_x_char = characteristics.find(c => c.uuid == uuid_value_forward_x);
+  const forward_y_char = characteristics.find(c => c.uuid == uuid_value_forward_y);
+  const forward_z_char = characteristics.find(c => c.uuid == uuid_value_forward_z);
 
-  height_char.subscribe();
+  forward_x_char.subscribe();
+  forward_y_char.subscribe();
+  forward_z_char.subscribe();
+
+  forward_x_char.on('data', (data) => {
+    forward_x = data.readFloatLE();
+    storeData();
+  });
+  forward_y_char.on('data', (data) => {
+    forward_y = data.readFloatLE();
+    storeData();
+  });
+  forward_z_char.on('data', (data) => {
+    forward_z = data.readFloatLE();
+    storeData();
+  });
 
   console.log("Connected!");
-
-  height_char.on('read', (data) => {
-    height = data.readFloatLE();
-    console.log(height);
-  });
 });
+
+function storeData() {
+  if (forward_x === undefined || forward_y === undefined || forward_z === undefined) {
+    return;
+  }
+
+  if (lastData !== undefined) {
+    const dt = Date.now() - lastData;
+    if (dt > 100) {
+      console.log(dt, "since data!");
+    }
+  }
+  lastData = Date.now();
+  data = {
+    x: forward_x,
+    y: forward_y,
+    z: forward_z
+  };
+  forward_x = undefined;
+  forward_y = undefined;
+  forward_z = undefined;
+}
 
 const WebSocket = require("ws");
 const wss = new WebSocket.Server({ port: 3001 });
 
 const sendData = (ws) => {
   return () => {
-    if (height === undefined) return;
-    ws.send(JSON.stringify({
-      "height": height
-    }));
+    if (data === undefined) return;
+    ws.send(JSON.stringify(data));
+    data = undefined;
   };
 }
 
 wss.on('connection', function connection(ws) {
-  setInterval(sendData(ws), 50);
+  setInterval(sendData(ws), 30);
 });
 
 const fs = require('fs');

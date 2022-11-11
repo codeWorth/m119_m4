@@ -234,8 +234,16 @@ void loop() {
       world_accel = IMU_BASIS * A; // recalculate after calibration
       // subtract off the existing 1 G downwards from gravity
       world_accel(2) -= 1;
+      float az = world_accel(2);
+      if (abs(az) < 0.02) {
+        az = 0;
+      } else {
+        az *= 10000;
+      }
       vz += world_accel(2) * dt;
+      vz *= movement_decel;
       z += vz * dt;
+      Serial << vz << '\t' << z << '\n';
 
       if (central) {
         height.writeValue(z);

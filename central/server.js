@@ -34,6 +34,7 @@ noble.on('discover', async (peripheral) => {
 
   height_char.on('read', (data) => {
     height = data.readFloatLE();
+    console.log(height);
   });
 });
 

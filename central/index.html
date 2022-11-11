@@ -4,10 +4,19 @@
 		<meta charset="utf-8">
 		<title>IMU Pong</title>
 		<style>
-			body { margin: 0; }
+			body { 
+                margin: 0; 
+                background-color: black;
+            }
+
+            canvas {
+                background-color: rgb(21, 21, 21);
+            }
 		</style>
 	</head>
 	<body>
+        <canvas id="canvas" width="900" height="600"></canvas><br/>
+        <button id="calibrate">Top position set</button>
 		<script>
             const webSocket = new WebSocket("ws://localhost:3001");
             let data = undefined;
@@ -19,9 +28,148 @@
                 data = JSON.parse(message.data);
             }
 
-            // if (data !== undefined) {
-            //     const height = data.height;
-            // }
+            const clamp = (num, min, max) => Math.min(Math.max(num, min), max);
+            const canvas = document.getElementById("canvas");
+            const ctx = canvas.getContext("2d");
+
+            const calibrateButton = document.getElementById("calibrate");
+
+            const paddleWidth = 10;
+            const paddleHeight = 60;
+            const padding = 10;
+            let p1Height = 0;
+            let p2Height = 0;
+
+            const ballRadius = 10;
+            let ballX = canvas.width/2;
+            let ballY = canvas.height/2;
+            let ballVx = 0;
+            let ballVy = 0;
+
+            let lastTime = undefined;
+
+            let topIMU_z = undefined;
+            let scaleIMU_z = undefined;
+
+            function drawHeight(height) {
+                const maxHeight = canvas.height - padding*2 - paddleHeight;
+                return clamp(height, padding, maxHeight);
+            }
+
+            function p1Bounds() {
+                return {
+                    minY: p1Height,
+                    maxY: p1Height + paddleHeight
+                }
+            }
+
+            function p2Bounds() {
+                return {
+                    minY: p2Height,
+                    maxY: p2Height + paddleHeight
+                }
+            }
+
+            function ballBounds() {
+                return {
+                    minX: padding + paddleWidth + ballRadius,
+                    maxX: canvas.width - padding - paddleWidth - ballRadius
+                };
+            }
+
+            function moveBall(dt) {
+                ballX += ballVx * dt;
+                ballY += ballVy * dt;
+            }
+
+            function bounceBall() {
+                if (ballY < ballRadius || ballY > canvas.height - ballRadius) {
+                    ballVy *= -1;
+                    ballY = clamp(ballY, ballRadius, canvas.height - ballRadius);
+                }
+
+                const {minX, maxX} = ballBounds();
+                if (ballX < minX) {
+                    ballVx *= -1;
+                    ballX = minX;
+                } else if (ballX > maxX) {
+                    ballVx *= -1;
+                    ballX = maxX;
+                }
+            }
+
+            function checkLoss() {
+                const {minX, maxX} = ballBounds();
+
+                if (ballX < minX) {
+                    const {minY, maxY} = p1Bounds();
+                    if (ballY < minY || ballY > maxY) {
+                        clearInterval(interval);
+                        alert("Player 2 wins!");
+                        return;
+                    }
+                }
+
+                if (ballX > maxX) {
+                    const {minY, maxY} = p2Bounds();
+                    if (ballY < minY || ballY > maxY) {
+                        clearInterval(interval);
+                        alert("Player 1 wins!");
+                        return;
+                    }
+                }
+            }
+
+            function draw() {
+                let dt = 0;
+                if (lastTime !== undefined) {
+                    dt = (Date.now() - lastTime) / 1000.0;
+                }
+                lastTime = Date.now();
+
+                if (topIMU_z !== undefined && scaleIMU_z !== undefined && data !== undefined) {
+                    const height = data.height;
+                    p2Height = (height - topIMU_z) * scaleIMU_z;
+                }
+
+                moveBall(dt);
+                checkLoss();
+                bounceBall();
+
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                ctx.fillStyle = "rgb(225, 225, 225)";
+
+                ctx.fillRect(
+                    padding, drawHeight(p1Height),
+                    paddleWidth, paddleHeight
+                );
+                ctx.fillRect(
+                    canvas.width - padding - paddleWidth, drawHeight(p2Height), 
+                    paddleWidth, paddleHeight
+                );
+
+                ctx.beginPath();
+                ctx.arc(ballX, ballY, ballRadius, 0, Math.PI*2, true);
+                ctx.closePath();
+                ctx.fill();
+            }
+
+            calibrateButton.onclick = () => {
+                if (data === undefined) return;
+                const height = data.height;
+
+                if (topIMU_z === undefined) {
+                    topIMU_z = height;
+                    calibrateButton.innerHTML = "Bottom position set";
+                    alert("Move your imu to the bottom position, and press the \"Bottom position set\" button");
+                } else if (scaleIMU_z === undefined) {
+                    scaleIMU_z = (canvas.height - padding - paddleHeight) / (height - topIMU_z);
+                    calibrateButton.hidden = true;
+                }
+            };
+
+            const interval = setInterval(draw, 20);
+            alert("Move your imu to the top position, and press the \"Top position set\" button");
 		</script>
 	</body>
 </html>

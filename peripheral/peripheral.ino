@@ -4,15 +4,15 @@
 
 using namespace BLA;
 
-#define BLE_UUID_PADDLE_SERVICE "1101"
+#define BLE_UUID_PADDLE_SERVICE "5101"
 #define BLE_UUID_FORWARD_X "2101"
 #define BLE_UUID_FORWARD_Y "2102"
 #define BLE_UUID_FORWARD_Z "2103"
 
 BLEService paddleService(BLE_UUID_PADDLE_SERVICE);
-BLEFloatCharacteristic forwardX(BLE_UUID_FORWARD_X, BLERead);
-BLEFloatCharacteristic forwardY(BLE_UUID_FORWARD_Y, BLERead);
-BLEFloatCharacteristic forwardZ(BLE_UUID_FORWARD_Z, BLERead);
+BLEFloatCharacteristic forwardX(BLE_UUID_FORWARD_X, BLERead | BLENotify);
+BLEFloatCharacteristic forwardY(BLE_UUID_FORWARD_Y, BLERead | BLENotify);
+BLEFloatCharacteristic forwardZ(BLE_UUID_FORWARD_Z, BLERead | BLENotify);
 
 unsigned long last_micros = 0;
 float movement;
